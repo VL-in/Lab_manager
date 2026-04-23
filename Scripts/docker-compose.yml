@@ -1,0 +1,52 @@
+# AI_lab_manager — stack local (Streamlit + Flowise)
+# Execute na pasta deste arquivo: docker compose up --build
+
+name: ai_lab_manager
+
+services:
+  flowise:
+    image: flowiseai/flowise:latest
+    container_name: ai_lab_manager_flowise
+    labels:
+      com.ai_lab_manager.title: "AI_lab_manager"
+      com.ai_lab_manager.role: "orchestration"
+    ports:
+      - "${FLOWISE_PORT:-3000}:3000"
+    environment:
+      PORT: 3000
+      # Persiste dados do Flowise (fluxos, armazenamento de credenciais etc.)
+      DATABASE_PATH: /root/.flowise
+    volumes:
+      - flowise_data:/root/.flowise
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:3000/api/v1/ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+
+  streamlit:
+    build:
+      context: ./apps/streamlit
+      dockerfile: Dockerfile
+    image: ai_lab_manager_streamlit:latest
+    container_name: ai_lab_manager_streamlit
+    labels:
+      com.ai_lab_manager.title: "AI_lab_manager"
+      com.ai_lab_manager.role: "ui"
+    ports:
+      - "${STREAMLIT_PORT:-8501}:8501"
+    environment:
+      # Streamlit → Flowise na rede do Compose (HTTP no servidor)
+      FLOWISE_BASE_URL: http://flowise:3000
+      # Porta publicada no host para abrir o Flowise no navegador
+      FLOWISE_PUBLIC_PORT: ${FLOWISE_PORT:-3000}
+    depends_on:
+      flowise:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  flowise_data:
+    name: ai_lab_manager_flowise_data
