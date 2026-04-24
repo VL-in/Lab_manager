@@ -6,11 +6,15 @@ Visão geral
 -----------
 Stack local com Docker Compose:
   • Flowise  — orquestração de fluxos / agentes (UI no host: veja a porta em FLOWISE_PORT)
-  • Streamlit — interface web do laboratório (UI no host: veja a porta em STREAMLIT_PORT)
+  • Streamlit — interface web do laboratório: chat integrado ao Flowise, histórico de
+    conversas persistente, exploração tabular de exemplo e exportações (DOCX, CSV, PNG)
+    (UI no host: veja a porta em STREAMLIT_PORT)
 
 Nome do projeto Compose: ai_lab_manager.
 Containers: ai_lab_manager_flowise, ai_lab_manager_streamlit.
-Volume nomeado para dados do Flowise: ai_lab_manager_flowise_data.
+Volumes nomeados:
+  • Dados do Flowise: ai_lab_manager_flowise_data
+  • Histórico de conversas do Streamlit: ai_lab_manager_streamlit_chat_data
 
 Requisitos
 ----------
@@ -54,14 +58,29 @@ Como executar (evitando erro comum de pasta ou porta)
 
    Se você mudou STREAMLIT_PORT ou FLOWISE_PORT no .env, use localhost com essas portas.
 
-5) Parar os contêineres (mantém o volume com dados do Flowise):
+5) Parar os contêineres (mantém os volumes com dados do Flowise e do histórico de chat):
 
      docker compose down
 
-   Para parar e apagar também o volume persistente do Flowise (apaga fluxos
-   salvos no volume):
+   Para parar e apagar também os volumes persistentes declarados no compose (apaga
+   fluxos salvos no Flowise e o ficheiro de conversas do Streamlit no volume
+   ai_lab_manager_streamlit_chat_data):
 
      docker compose down -v
+
+Segurança e partilha de repositório
+-----------------------------------
+  • Não coloque FLOWISE_CHATFLOW_ID, FLOWISE_API_KEY nem outros segredos em código
+    Python ou em ficheiros versionados com valores reais.
+  • A aplicação resolve esses valores só em tempo de execução, em
+    apps/streamlit/env_config.py: primeiro variáveis de ambiente, depois chaves de
+    mesmo nome em .streamlit/secrets.toml (à frente do comando streamlit run;
+    esse ficheiro deve permanecer fora do Git — ver .gitignore).
+  • O .env na pasta do compose também fica fora do Git; o .env.example serve só de
+    modelo, sem segredos.
+  • No docker-compose.yml, FLOWISE_CHATFLOW_ID e FLOWISE_API_KEY aparecem apenas como
+    referências ${...} ao ambiente do host; valores reais ficam no seu .env local ou
+    no sistema de secrets da sua CI/CD, nunca commitados.
 
 Variáveis de ambiente (.env)
 ----------------------------
@@ -71,12 +90,31 @@ Definidas em .env.example — copie para .env na mesma pasta que o docker-compos
   FLOWISE_PORT    — porta publicada no host para o Flowise (padrão: 3000; use outra,
                     ex. 3001, só se a 3000 do host estiver ocupada)
 
+Opcionais no .env (recomendadas para respostas reais do assistente no Streamlit):
+
+  FLOWISE_CHATFLOW_ID — ID do chatflow no Flowise (usado em POST .../api/v1/prediction/{id}).
+                        Se estiver vazio, a UI funciona em modo demonstração (sem chamar
+                        o fluxo com ID).
+  FLOWISE_API_KEY     — Chave de API do Flowise, se o servidor estiver configurado para
+                        exigir autenticação (cabeçalho Authorization: Bearer ...).
+
 Dentro do contêiner Streamlit (já definidas no compose; não precisa repetir no .env):
 
   FLOWISE_BASE_URL     — URL interna para chamadas HTTP entre contêineres
                          (http://flowise:3000)
   FLOWISE_PUBLIC_PORT  — só para mensagens na UI; precisa coincidir com o mapeamento
                          no host (o Compose repassa o valor de FLOWISE_PORT do .env)
+  FLOWISE_CHATFLOW_ID  — repete o valor do .env do host (pode ficar vazio)
+  FLOWISE_API_KEY      — repete o valor do .env do host (pode ficar vazio)
+  LAB_CHAT_DATA_DIR    — diretório onde é gravado o histórico de conversas (/app/data),
+                         persistido pelo volume streamlit_chat_data
+
+Execução local do Streamlit (fora do Docker), na pasta apps/streamlit:
+
+  • Opcional: LAB_CHAT_DATA_DIR — se não definida, o histórico grava-se em apps/streamlit/data/
+    (pasta ignorada pelo Git; criada automaticamente).
+  • FLOWISE_BASE_URL — por exemplo http://localhost:3000 se o Flowise estiver no host.
+  • FLOWISE_CHATFLOW_ID / FLOWISE_API_KEY — mesma semântica que no compose.
 
 Comportamento técnico
 ---------------------
@@ -87,15 +125,39 @@ Comportamento técnico
     do Flowise estar pronto.
   • Dados do Flowise (base SQLite e arquivos sob DATABASE_PATH) persistem no
     volume Docker ai_lab_manager_flowise_data montado em /root/.flowise.
+  • Com o ID do chatflow definido no ambiente (ou em secrets), o Streamlit envia cada
+    mensagem ao Flowise via HTTP POST em /api/v1/prediction/<id>, com corpo JSON que
+    inclui "question" e "sessionId" (o ID da conversa no Streamlit, para memória por
+    conversa no lado do Flowise quando o fluxo o suportar). Sem ID configurado, não
+    há chamada a este endpoint: resposta de demonstração.
+  • Histórico de conversas do Streamlit: ficheiro JSON chat_sessions.json sob
+    LAB_CHAT_DATA_DIR (no Docker: /app/data, volume ai_lab_manager_streamlit_chat_data).
+
+Interface Streamlit (funcional)
+-------------------------------
+  • Barra lateral: nova conversa, lista de conversas anteriores, ligação ao Flowise,
+    remoção da conversa atual (se existir mais do que uma).
+  • Área principal: chat (mensagens de utilizador e assistente).
+  • Painel à direita: exportar a conversa atual em .docx; separador de dados tabulares
+    com tabela de exemplo, filtros e exportação CSV da vista; separador com gráfico de
+    exemplo e exportação PNG.
+  • Dependências Python adicionais: requests, python-docx, pandas, matplotlib
+    (ver apps/streamlit/requirements.txt).
 
 Estrutura relevante do repositório
 ----------------------------------
   docker-compose.yml      — definição dos serviços
   .env.example            — modelo de variáveis
   apps/streamlit/         — código e Dockerfile do Streamlit
-    app.py                — aplicação Streamlit (título AI_lab_manager)
-    Dockerfile
+    app.py                — aplicação principal (layout chat + dados + exportações)
+    env_config.py         — leitura de config sensível (ambiente + st.secrets; sem literais)
+    chat_sessions.py      — modelo e persistência das conversas (JSON)
+    flowise_client.py     — cliente HTTP para predição (recebe ID/chave já resolvidos)
+    export_utils.py       — exportação DOCX / CSV / PNG
+    Dockerfile            — copia o diretório apps/streamlit para a imagem (COPY . .)
     requirements.txt
+    data/                 — apenas em execução local sem Docker: ficheiros de estado
+                            (ignorado pelo Git; ver .gitignore)
 
 Resolução de problemas
 ----------------------
@@ -111,7 +173,12 @@ Resolução de problemas
 
   • Erro ao fazer build do Streamlit:
       Confirme que você está na pasta Scripts e que apps/streamlit contém Dockerfile,
-      requirements.txt e app.py.
+      requirements.txt, app.py e os módulos Python referenciados na secção de estrutura.
+
+  • Chat em modo demonstração ou sem resposta do fluxo:
+      Confirme FLOWISE_CHATFLOW_ID no .env (ID correto do chatflow no Flowise) e que o
+      fluxo está publicado/ativo. Em caso de 401/403, configure FLOWISE_API_KEY conforme
+      a instância do Flowise.
 
   • Ver estado dos serviços:
       docker compose ps
@@ -123,7 +190,9 @@ Notas para evolução (fora deste compose)
 ----------------------------------------
   • LM Studio no host (modelos locais): os contêineres acessam o host em geral
     via host.docker.internal no Windows; isso será documentado quando integrar
-    chat/API no Streamlit ou no Flowise.
+    modelos locais diretamente neste compose.
+  • Próximos passos típicos: fonte de dados real no painel tabular, anexos no chat,
+    streaming de tokens se o fluxo Flowise suportar.
 
 ================================================================================
   Fim do README

@@ -42,6 +42,14 @@ services:
       FLOWISE_BASE_URL: http://flowise:3000
       # Porta publicada no host para abrir o Flowise no navegador
       FLOWISE_PUBLIC_PORT: ${FLOWISE_PORT:-3000}
+      # ID do chatflow (copiar do Flowise) — opcional; sem isto a UI usa modo demonstração
+      FLOWISE_CHATFLOW_ID: ${FLOWISE_CHATFLOW_ID:-}
+      # Chave API do Flowise, se o servidor exigir autenticação
+      FLOWISE_API_KEY: ${FLOWISE_API_KEY:-}
+      # Persistência do histórico de conversas entre reinícios do contêiner
+      LAB_CHAT_DATA_DIR: /app/data
+    volumes:
+      - streamlit_chat_data:/app/data
     depends_on:
       flowise:
         condition: service_healthy
@@ -50,3 +58,5 @@ services:
 volumes:
   flowise_data:
     name: ai_lab_manager_flowise_data
+  streamlit_chat_data:
+    name: ai_lab_manager_streamlit_chat_data
