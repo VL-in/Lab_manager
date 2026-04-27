@@ -7,7 +7,7 @@ Visão geral
 Stack local com Docker Compose:
   • Flowise  — orquestração de fluxos / agentes (UI no host: veja a porta em FLOWISE_PORT)
   • Streamlit — interface web do laboratório: chat integrado ao Flowise, histórico de
-    conversas persistente, exploração tabular de exemplo e exportações (DOCX, CSV, PNG)
+    conversas persistente e exportação da conversa em DOCX
     (UI no host: veja a porta em STREAMLIT_PORT)
 
 Nome do projeto Compose: ai_lab_manager.
@@ -92,9 +92,9 @@ Definidas em .env.example — copie para .env na mesma pasta que o docker-compos
 
 Opcionais no .env (recomendadas para respostas reais do assistente no Streamlit):
 
-  FLOWISE_CHATFLOW_ID — ID do chatflow no Flowise (usado em POST .../api/v1/prediction/{id}).
-                        Se estiver vazio, a UI funciona em modo demonstração (sem chamar
-                        o fluxo com ID).
+  FLOWISE_CHATFLOW_ID — ID do flow no Flowise (Chatflow ou AgentFlow), usado em
+                        POST .../api/v1/prediction/{id}. Se estiver vazio, a UI
+                        funciona em modo demonstração (sem chamar o fluxo com ID).
   FLOWISE_API_KEY     — Chave de API do Flowise, se o servidor estiver configurado para
                         exigir autenticação (cabeçalho Authorization: Bearer ...).
 
@@ -125,7 +125,7 @@ Comportamento técnico
     do Flowise estar pronto.
   • Dados do Flowise (base SQLite e arquivos sob DATABASE_PATH) persistem no
     volume Docker ai_lab_manager_flowise_data montado em /root/.flowise.
-  • Com o ID do chatflow definido no ambiente (ou em secrets), o Streamlit envia cada
+  • Com o ID do flow definido no ambiente (ou em secrets), o Streamlit envia cada
     mensagem ao Flowise via HTTP POST em /api/v1/prediction/<id>, com corpo JSON que
     inclui "question" e "sessionId" (o ID da conversa no Streamlit, para memória por
     conversa no lado do Flowise quando o fluxo o suportar). Sem ID configurado, não
@@ -135,25 +135,22 @@ Comportamento técnico
 
 Interface Streamlit (funcional)
 -------------------------------
-  • Barra lateral: nova conversa, lista de conversas anteriores, ligação ao Flowise,
-    remoção da conversa atual (se existir mais do que uma).
-  • Área principal: chat (mensagens de utilizador e assistente).
-  • Painel à direita: exportar a conversa atual em .docx; separador de dados tabulares
-    com tabela de exemplo, filtros e exportação CSV da vista; separador com gráfico de
-    exemplo e exportação PNG.
-  • Dependências Python adicionais: requests, python-docx, pandas, matplotlib
-    (ver apps/streamlit/requirements.txt).
+  • Barra lateral: nova conversa, lista de conversas anteriores, exportar conversa (.docx),
+    estado da ligação ao Flowise, remoção da conversa atual (se existir mais do que uma).
+  • Área principal: cabeçalho discreto, painel do thread de mensagens e campo de entrada.
+  • Dependências Python adicionais: requests, python-docx (ver apps/streamlit/requirements.txt).
 
 Estrutura relevante do repositório
 ----------------------------------
   docker-compose.yml      — definição dos serviços
   .env.example            — modelo de variáveis
   apps/streamlit/         — código e Dockerfile do Streamlit
-    app.py                — aplicação principal (layout chat + dados + exportações)
+    app.py                — aplicação principal (layout chat + exportação)
+    theme.py              — tema claro P&D (CSS injetado)
     env_config.py         — leitura de config sensível (ambiente + st.secrets; sem literais)
     chat_sessions.py      — modelo e persistência das conversas (JSON)
     flowise_client.py     — cliente HTTP para predição (recebe ID/chave já resolvidos)
-    export_utils.py       — exportação DOCX / CSV / PNG
+    export_utils.py       — exportação DOCX
     Dockerfile            — copia o diretório apps/streamlit para a imagem (COPY . .)
     requirements.txt
     data/                 — apenas em execução local sem Docker: ficheiros de estado
@@ -176,9 +173,24 @@ Resolução de problemas
       requirements.txt, app.py e os módulos Python referenciados na secção de estrutura.
 
   • Chat em modo demonstração ou sem resposta do fluxo:
-      Confirme FLOWISE_CHATFLOW_ID no .env (ID correto do chatflow no Flowise) e que o
+      Confirme FLOWISE_CHATFLOW_ID no .env (ID correto do Chatflow/AgentFlow no Flowise) e que o
       fluxo está publicado/ativo. Em caso de 401/403, configure FLOWISE_API_KEY conforme
       a instância do Flowise.
+
+AgentFlow + LM Studio (fluxo recomendado)
+-----------------------------------------
+  • Fluxo suportado no projeto: AgentFlow no Flowise orquestrando chamadas ao LLM local
+    via LM Studio.
+  • Nesse cenário, o valor em FLOWISE_CHATFLOW_ID continua obrigatório para respostas reais:
+    use o ID que aparece no endpoint de prediction do AgentFlow
+    (/api/v1/prediction/{id}).
+  • Onde obter o ID na UI do Flowise:
+      1) Abra Agentflows e selecione o fluxo.
+      2) Abra Share/API/Embed.
+      3) Copie o endpoint e extraia o {id}.
+  • Exemplo no .env:
+      FLOWISE_CHATFLOW_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+      FLOWISE_API_KEY=... (se a instância exigir autenticação)
 
   • Ver estado dos serviços:
       docker compose ps
@@ -191,8 +203,8 @@ Notas para evolução (fora deste compose)
   • LM Studio no host (modelos locais): os contêineres acessam o host em geral
     via host.docker.internal no Windows; isso será documentado quando integrar
     modelos locais diretamente neste compose.
-  • Próximos passos típicos: fonte de dados real no painel tabular, anexos no chat,
-    streaming de tokens se o fluxo Flowise suportar.
+  • Próximos passos típicos: painel de dados ou anexos no chat, streaming de tokens se o
+    fluxo Flowise suportar.
 
 ================================================================================
   Fim do README

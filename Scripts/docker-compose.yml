@@ -42,7 +42,8 @@ services:
       FLOWISE_BASE_URL: http://flowise:3000
       # Porta publicada no host para abrir o Flowise no navegador
       FLOWISE_PUBLIC_PORT: ${FLOWISE_PORT:-3000}
-      # ID do chatflow (copiar do Flowise) — opcional; sem isto a UI usa modo demonstração
+      # ID do flow do Flowise (Chatflow ou AgentFlow, endpoint /api/v1/prediction/{id})
+      # Opcional; sem isto a UI usa modo demonstração.
       FLOWISE_CHATFLOW_ID: ${FLOWISE_CHATFLOW_ID:-}
       # Chave API do Flowise, se o servidor exigir autenticação
       FLOWISE_API_KEY: ${FLOWISE_API_KEY:-}
