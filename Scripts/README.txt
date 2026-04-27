@@ -19,12 +19,22 @@ Volumes nomeados:
   • Histórico de conversas do Streamlit: ai_lab_manager_streamlit_chat_data
   • Vetores/coleções Chroma: ai_lab_manager_chroma_data
 
-Progresso atual (já implementado)
----------------------------------
-  • Streamlit + Flowise em execução no Docker com chat funcional.
-  • Flowise ligado ao LLM local qwen/qwen3.5-9b no LM Studio.
-  • Streamlit consumindo o endpoint /api/v1/prediction/{id} do Flowise.
-  • Base pronta para evoluir para RAG com Chroma local e embeddings por API.
+Progresso atual (implementado e validado)
+-----------------------------------------
+  • Streamlit + Flowise + Chroma em execução no Docker com serviços saudáveis.
+  • RAG operacional no Flowise com upsert para Chroma local.
+  • Embeddings no LM Studio com modelo `mxbai-embed-large-v1` (1024 dimensões).
+  • Configuração validada de upsert:
+      - batch size: 20
+      - timeout: 360
+      - Vector Store: Chroma local (`http://chroma:8000`)
+      - top-k: 5
+  • Pipeline de carga no Flowise validado com:
+      - Docx File Loader
+      - Token Text Splitter (`encoding: gpt2`)
+      - chunk size: 300
+      - chunk overlap: 100
+      - dois loaders separados: sensibilização e otimização
 
 Requisitos
 ----------
@@ -106,6 +116,7 @@ Definidas em .env.example — copie para .env na mesma pasta que o docker-compos
   LMSTUDIO_BASE_URL — endpoint OpenAI-compatible do LM Studio
                       (padrão Docker/Windows: http://host.docker.internal:1234/v1)
   LMSTUDIO_EMBEDDING_MODEL — modelo de embeddings usado na ingestão e retrieval
+                           (estado validado: mxbai-embed-large-v1)
 
 Opcionais no .env (recomendadas para respostas reais do assistente no Streamlit):
 
@@ -191,27 +202,50 @@ Estrutura relevante do repositório
 
 RAG com Chroma + embeddings (MVP)
 ---------------------------------
+Passo a passo recomendado para execução sem erro:
+
 1) Inicie a stack:
 
      docker compose up --build -d
 
-2) Instale dependências dos scripts de ingestão:
+2) Verifique a saúde dos serviços:
+
+     docker compose ps
+
+   Resultado esperado: `flowise` e `chroma` com status `healthy`.
+
+3) Abra o Flowise e configure o Document Store (RAG):
+
+   • Loader:
+     - Docx File Loader
+     - criar dois loaders: um para documentos de sensibilização e outro para otimização
+
+   • Text Splitter:
+     - Token Text Splitter
+     - encoding: gpt2
+     - chunk size: 300
+     - chunk overlap: 100
+
+   • Embeddings (LM Studio):
+     - provider OpenAI-compatible apontando para LM Studio
+     - model: `mxbai-embed-large-v1`
+     - dimensions: 1024
+     - batch size: 20
+     - timeout: 360
+
+   • Vector Store (Chroma):
+     - URL: `http://chroma:8000`
+     - collection: defina um nome explícito por projeto (ex.: `ProjetoELISA_1024`)
+     - top-k: 5
+
+4) Execute o upsert no Document Store.
+
+5) (Opcional) Valide retrieval com scripts locais:
 
      pip install -r packages/ingest/requirements.txt
+     python packages/ingest/rag_eval.py --golden-set .\data\golden_set.json --top-k 5
 
-3) Faça ingestão de documentos (.txt/.md) para a coleção vetorial:
-
-     python packages/ingest/chroma_ingest.py --input-dir .\data\docs
-
-4) Configure o Flowise conforme:
-
-     apps/flowise/RAG_MVP_SETUP.md
-
-5) Execute validação básica de retrieval com conjunto dourado (JSON):
-
-     python packages/ingest/rag_eval.py --golden-set .\data\golden_set.json --top-k 4
-
-O script de ingestão usa metadados mínimos por chunk:
+O script de ingestão local usa metadados mínimos por chunk:
   chunk_id, doc_id, source_uri, lang, content_hash, ingested_at, project
 e aplica idempotência por combinação estável de chunk_id + content_hash.
 
@@ -235,6 +269,17 @@ Resolução de problemas
       Confirme FLOWISE_CHATFLOW_ID no .env (ID correto do Chatflow/AgentFlow no Flowise) e que o
       fluxo está publicado/ativo. Em caso de 401/403, configure FLOWISE_API_KEY conforme
       a instância do Flowise.
+
+  • Upsert no Flowise falha com "ChromaConnectionError":
+      Verifique a URL do Chroma no Vector Store do Flowise.
+      Em Docker, use `http://chroma:8000` (não use `127.0.0.1` dentro do Flowise).
+      Se a coleção estiver com dimensionalidade antiga (ex.: 768), crie nova coleção
+      para 1024 dimensões (ex.: `ProjetoELISA_1024`) e execute novo upsert.
+
+  • Erro de dimensionalidade no Chroma (768 vs 1024):
+      A dimensionalidade da coleção é fixada no primeiro insert.
+      Para mudar de 768 para 1024, use um novo nome de coleção ou apague a coleção antiga
+      e reingira todos os documentos com o modelo atual.
 
 AgentFlow + LM Studio (fluxo recomendado)
 -----------------------------------------
