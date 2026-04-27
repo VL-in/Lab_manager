@@ -4,6 +4,28 @@
 name: ai_lab_manager
 
 services:
+  chroma:
+    image: chromadb/chroma:0.5.23
+    container_name: ai_lab_manager_chroma
+    labels:
+      com.ai_lab_manager.title: "AI_lab_manager"
+      com.ai_lab_manager.role: "vector_store"
+    ports:
+      - "${CHROMA_PORT:-8000}:8000"
+    environment:
+      IS_PERSISTENT: "TRUE"
+      PERSIST_DIRECTORY: /data
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - chroma_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/8000'"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 40s
+
   flowise:
     image: flowiseai/flowise:latest
     container_name: ai_lab_manager_flowise
@@ -47,11 +69,20 @@ services:
       FLOWISE_CHATFLOW_ID: ${FLOWISE_CHATFLOW_ID:-}
       # Chave API do Flowise, se o servidor exigir autenticação
       FLOWISE_API_KEY: ${FLOWISE_API_KEY:-}
+      # Chroma local (container para vetor store do RAG)
+      CHROMA_HOST: chroma
+      CHROMA_PORT: ${CHROMA_PORT:-8000}
+      CHROMA_COLLECTION: ${CHROMA_COLLECTION:-lab_docs}
+      # LM Studio (host) para embeddings OpenAI-compatible
+      LMSTUDIO_BASE_URL: ${LMSTUDIO_BASE_URL:-http://host.docker.internal:1234/v1}
+      LMSTUDIO_EMBEDDING_MODEL: ${LMSTUDIO_EMBEDDING_MODEL:-text-embedding-nomic-embed-text-v1.5}
       # Persistência do histórico de conversas entre reinícios do contêiner
       LAB_CHAT_DATA_DIR: /app/data
     volumes:
       - streamlit_chat_data:/app/data
     depends_on:
+      chroma:
+        condition: service_healthy
       flowise:
         condition: service_healthy
     restart: unless-stopped
@@ -61,3 +92,5 @@ volumes:
     name: ai_lab_manager_flowise_data
   streamlit_chat_data:
     name: ai_lab_manager_streamlit_chat_data
+  chroma_data:
+    name: ai_lab_manager_chroma_data

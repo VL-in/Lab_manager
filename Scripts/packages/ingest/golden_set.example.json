@@ -1,0 +1,10 @@
+[
+  {
+    "query": "Qual e o procedimento de calibracao do equipamento X?",
+    "must_contain": "calibracao"
+  },
+  {
+    "query": "Qual e o intervalo recomendado para manutencao preventiva?",
+    "must_contain": "manutencao"
+  }
+]

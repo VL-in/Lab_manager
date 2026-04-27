@@ -9,21 +9,32 @@ Stack local com Docker Compose:
   • Streamlit — interface web do laboratório: chat integrado ao Flowise, histórico de
     conversas persistente e exportação da conversa em DOCX
     (UI no host: veja a porta em STREAMLIT_PORT)
+  • ChromaDB — vetor store local para RAG e embeddings textuais
+    (API no host: veja a porta em CHROMA_PORT)
 
 Nome do projeto Compose: ai_lab_manager.
-Containers: ai_lab_manager_flowise, ai_lab_manager_streamlit.
+Containers: ai_lab_manager_flowise, ai_lab_manager_streamlit, ai_lab_manager_chroma.
 Volumes nomeados:
   • Dados do Flowise: ai_lab_manager_flowise_data
   • Histórico de conversas do Streamlit: ai_lab_manager_streamlit_chat_data
+  • Vetores/coleções Chroma: ai_lab_manager_chroma_data
+
+Progresso atual (já implementado)
+---------------------------------
+  • Streamlit + Flowise em execução no Docker com chat funcional.
+  • Flowise ligado ao LLM local qwen/qwen3.5-9b no LM Studio.
+  • Streamlit consumindo o endpoint /api/v1/prediction/{id} do Flowise.
+  • Base pronta para evoluir para RAG com Chroma local e embeddings por API.
 
 Requisitos
 ----------
   • Docker Engine + Docker Compose v2 (por exemplo, Docker Desktop no Windows)
   • Portas livres no host. Padrão do projeto no .env.example:
-      Flowise no host **3000**, Streamlit no host **8501**
+      Flowise no host **3000**, Streamlit no host **8501**, Chroma no host **8000**
     (a porta interna do Flowise dentro da rede Docker também é 3000; só o mapeamento
     no host muda se você definir outra FLOWISE_PORT, por exemplo 3001 em caso de conflito.)
-  • Primeira execução: download da imagem flowiseai/flowise (pode demorar)
+  • Primeira execução: download das imagens flowiseai/flowise e chromadb/chroma
+    (pode demorar)
 
 Como executar (evitando erro comum de pasta ou porta)
 -------------------------------------------------------
@@ -55,6 +66,7 @@ Como executar (evitando erro comum de pasta ou porta)
 
    • Streamlit:  http://localhost:8501
    • Flowise:    http://localhost:3000
+   • Chroma:     http://localhost:8000
 
    Se você mudou STREAMLIT_PORT ou FLOWISE_PORT no .env, use localhost com essas portas.
 
@@ -89,6 +101,11 @@ Definidas em .env.example — copie para .env na mesma pasta que o docker-compos
   STREAMLIT_PORT  — porta publicada no host para o Streamlit (padrão: 8501)
   FLOWISE_PORT    — porta publicada no host para o Flowise (padrão: 3000; use outra,
                     ex. 3001, só se a 3000 do host estiver ocupada)
+  CHROMA_PORT     — porta publicada no host para a API do Chroma (padrão: 8000)
+  CHROMA_COLLECTION — coleção padrão de documentos para o RAG (padrão: lab_docs)
+  LMSTUDIO_BASE_URL — endpoint OpenAI-compatible do LM Studio
+                      (padrão Docker/Windows: http://host.docker.internal:1234/v1)
+  LMSTUDIO_EMBEDDING_MODEL — modelo de embeddings usado na ingestão e retrieval
 
 Opcionais no .env (recomendadas para respostas reais do assistente no Streamlit):
 
@@ -106,6 +123,11 @@ Dentro do contêiner Streamlit (já definidas no compose; não precisa repetir n
                          no host (o Compose repassa o valor de FLOWISE_PORT do .env)
   FLOWISE_CHATFLOW_ID  — repete o valor do .env do host (pode ficar vazio)
   FLOWISE_API_KEY      — repete o valor do .env do host (pode ficar vazio)
+  CHROMA_HOST          — host do Chroma na rede Docker (chroma)
+  CHROMA_PORT          — porta do Chroma na rede Docker (8000)
+  CHROMA_COLLECTION    — coleção vetorial padrão para o RAG
+  LMSTUDIO_BASE_URL    — URL do LM Studio para embeddings/chat OpenAI-compatible
+  LMSTUDIO_EMBEDDING_MODEL — nome do modelo de embeddings no LM Studio
   LAB_CHAT_DATA_DIR    — diretório onde é gravado o histórico de conversas (/app/data),
                          persistido pelo volume streamlit_chat_data
 
@@ -120,6 +142,8 @@ Comportamento técnico
 ---------------------
   • O Flowise escuta na porta 3000 dentro da rede Docker; o mapeamento para o
     host é ${FLOWISE_PORT:-3000}:3000.
+  • O Chroma escuta na porta 8000 dentro da rede Docker; o mapeamento para o
+    host é ${CHROMA_PORT:-8000}:8000.
   • Healthcheck do Flowise: GET http://127.0.0.1:3000/api/v1/ping (curl dentro
     da imagem). O Streamlit depende de service_healthy para não iniciar antes
     do Flowise estar pronto.
@@ -130,6 +154,8 @@ Comportamento técnico
     inclui "question" e "sessionId" (o ID da conversa no Streamlit, para memória por
     conversa no lado do Flowise quando o fluxo o suportar). Sem ID configurado, não
     há chamada a este endpoint: resposta de demonstração.
+  • Para RAG: o Flowise consulta o Chroma (vector store) e usa embeddings servidos
+    pelo LM Studio via API OpenAI-compatible.
   • Histórico de conversas do Streamlit: ficheiro JSON chat_sessions.json sob
     LAB_CHAT_DATA_DIR (no Docker: /app/data, volume ai_lab_manager_streamlit_chat_data).
 
@@ -144,6 +170,8 @@ Estrutura relevante do repositório
 ----------------------------------
   docker-compose.yml      — definição dos serviços
   .env.example            — modelo de variáveis
+  apps/flowise/
+    RAG_MVP_SETUP.md      — bootstrap do RAG no Flowise com Chroma + LM Studio
   apps/streamlit/         — código e Dockerfile do Streamlit
     app.py                — aplicação principal (layout chat + exportação)
     theme.py              — tema claro P&D (CSS injetado)
@@ -155,6 +183,37 @@ Estrutura relevante do repositório
     requirements.txt
     data/                 — apenas em execução local sem Docker: ficheiros de estado
                             (ignorado pelo Git; ver .gitignore)
+
+  packages/ingest/        — scripts de ingestão e validação de retrieval
+    chroma_ingest.py      — chunking + embeddings + upsert idempotente no Chroma
+    rag_eval.py           — avaliação básica de recall@k em conjunto dourado JSON
+    requirements.txt
+
+RAG com Chroma + embeddings (MVP)
+---------------------------------
+1) Inicie a stack:
+
+     docker compose up --build -d
+
+2) Instale dependências dos scripts de ingestão:
+
+     pip install -r packages/ingest/requirements.txt
+
+3) Faça ingestão de documentos (.txt/.md) para a coleção vetorial:
+
+     python packages/ingest/chroma_ingest.py --input-dir .\data\docs
+
+4) Configure o Flowise conforme:
+
+     apps/flowise/RAG_MVP_SETUP.md
+
+5) Execute validação básica de retrieval com conjunto dourado (JSON):
+
+     python packages/ingest/rag_eval.py --golden-set .\data\golden_set.json --top-k 4
+
+O script de ingestão usa metadados mínimos por chunk:
+  chunk_id, doc_id, source_uri, lang, content_hash, ingested_at, project
+e aplica idempotência por combinação estável de chunk_id + content_hash.
 
 Resolução de problemas
 ----------------------
