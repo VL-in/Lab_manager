@@ -1,4 +1,4 @@
-"""Validacao basica de retrieval para RAG em pt-BR.
+"""Validação básica de recuperação (retrieval) para RAG em pt-BR.
 
 Espera um arquivo JSON com lista de casos:
 [
@@ -23,7 +23,7 @@ def _embed_query(client: OpenAI, model: str, text: str) -> list[float]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Avalia retrieval no Chroma.")
+    parser = argparse.ArgumentParser(description="Avalia a recuperação de documentos no Chroma.")
     parser.add_argument("--golden-set", required=True, help="Arquivo JSON com casos de teste")
     parser.add_argument("--top-k", type=int, default=4)
     parser.add_argument("--chroma-host", default=os.getenv("CHROMA_HOST", "localhost"))

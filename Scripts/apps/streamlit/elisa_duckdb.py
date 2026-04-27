@@ -1,4 +1,4 @@
-"""Carrega folhas de Excel (ELISA) numa base DuckDB em memória para consulta SQL."""
+"""Carrega planilhas de Excel (ELISA) em uma base DuckDB em memória para consulta SQL."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ def list_xlsx_files(directory: Path) -> list[Path]:
 
 
 def load_xlsx_into_duckdb(directory: Path) -> tuple[duckdb.DuckDBPyConnection, list[str], list[str]]:
-    """Devolve (conexão, nomes de tabelas, avisos)."""
+    """Retorna (conexão, nomes de tabelas, avisos)."""
     warnings: list[str] = []
     files = list_xlsx_files(directory)
     if not files:
@@ -64,7 +64,7 @@ def load_xlsx_into_duckdb(directory: Path) -> tuple[duckdb.DuckDBPyConnection, l
 
         sheets = xl.sheet_names
         if not sheets:
-            warnings.append(f"{path.name}: sem folhas.")
+            warnings.append(f"{path.name}: sem planilhas.")
             continue
 
         for sheet in sheets:

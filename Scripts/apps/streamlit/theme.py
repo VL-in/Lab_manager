@@ -23,7 +23,7 @@ def inject_theme() -> None:
             background: var(--lab-bg);
             color: var(--lab-text);
           }
-          /* Melhor leitura em ecrãs estreitos (telemóvel / janela estreita). */
+          /* Melhor leitura em telas estreitas (celular / janela estreita). */
           @media (max-width: 768px) {
             section[data-testid="stMain"] .block-container {
               padding-left: 0.75rem;
@@ -64,7 +64,7 @@ def inject_theme() -> None:
           [data-testid="stChatMessage"] [data-testid="stVerticalBlock"] {
             gap: 0.35rem;
           }
-          /* Área do thread de mensagens dentro do contentor com borda. */
+          /* Área do thread de mensagens dentro do contêiner com borda. */
           div[data-testid="stVerticalBlockBorderWrapper"]:has([data-testid="stChatMessage"]) {
             background: var(--lab-surface);
             border-radius: 12px;
@@ -105,8 +105,8 @@ def inject_theme() -> None:
           }
           /*
            * Espaço para o cabeçalho nativo do Streamlit (menu, tema, “Deploy”).
-           * padding-top demasiado baixo faz as abas e o primeiro conteúdo ficarem
-           * por baixo do header e deixam de ser clicáveis.
+           * padding-top muito baixo faz as abas e o primeiro conteúdo ficarem
+           * atrás do cabeçalho e deixam de ser clicáveis.
            */
           section[data-testid="stMain"] .block-container {
             padding-top: max(5.5rem, calc(1rem + 3.75rem));
@@ -117,8 +117,9 @@ def inject_theme() -> None:
           [data-testid="stDataFrame"] {
             border-radius: 8px;
           }
-          /* Input de chat visível em fundo claro ao rolar. */
+          /* Campo de mensagem abaixo da área de conversa: respiro e leitura em fundo claro. */
           [data-testid="stChatInput"] {
+            margin-top: 0.75rem;
             background: var(--lab-surface);
             border-radius: 12px;
             border: 1px solid var(--lab-border);

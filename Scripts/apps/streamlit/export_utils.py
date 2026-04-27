@@ -15,7 +15,7 @@ def conversation_to_docx_bytes(messages: list[dict[str, Any]], title: str = "Exp
     if Document is None:
         raise RuntimeError("O pacote python-docx não está instalado.")
     doc = Document()
-    doc.add_heading("Lab manager — conversa exportada", level=0)
+    doc.add_heading("Assistente de laboratório — conversa exportada", level=0)
     doc.add_paragraph(title, style="Intense Quote")
     for m in messages:
         role = m.get("role", "")

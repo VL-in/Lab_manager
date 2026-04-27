@@ -1,6 +1,6 @@
-# Flowise RAG MVP (LM Studio embeddings + Chroma)
+# Flowise — RAG MVP (embeddings no LM Studio + Chroma)
 
-Este guia configura o MVP de RAG no Flowise usando:
+Este guia configura o MVP de RAG no Flowise com:
 - LLM local no LM Studio para chat (`qwen/qwen3.5-9b`)
 - modelo de embeddings no LM Studio via API OpenAI-compatible
 - Chroma rodando no Docker Compose (`http://chroma:8000` dentro da rede)
@@ -42,7 +42,7 @@ Garanta que cada chunk em Chroma tenha:
 - `ingested_at`
 
 ## 5) Validação rápida
-1. Ingerir documentos de teste em `packages/ingest/chroma_ingest.py`
+1. Ingerir documentos de teste com `packages/ingest/chroma_ingest.py`
 2. Fazer 5-10 perguntas reais no Streamlit
 3. Verificar:
    - se a resposta usa conteúdo recuperado

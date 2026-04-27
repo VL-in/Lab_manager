@@ -78,12 +78,12 @@ services:
       LMSTUDIO_EMBEDDING_MODEL: ${LMSTUDIO_EMBEDDING_MODEL:-text-embedding-nomic-embed-text-v1.5}
       # Persistência do histórico de conversas entre reinícios do contêiner
       LAB_CHAT_DATA_DIR: /app/data
-      # Caminho Linux **dentro** do contentor onde os .xlsx são lidos (ver volume abaixo).
-      # Não use aqui caminhos Windows (D:\...): no Linux do contentor não existem.
+      # Caminho Linux **dentro** do contêiner onde os .xlsx são lidos (ver volume abaixo).
+      # Não use aqui caminhos Windows (D:\...): no Linux do contêiner não existem.
       ELISA_XLSX_DIR: /data/elisa
     volumes:
       - streamlit_chat_data:/app/data
-      # Monta Excel do host em /data/elisa. Por omissão: pasta relativa ao compose (criada se não existir).
+      # Monta Excel do host em /data/elisa. Por padrão: pasta relativa ao compose (criada se não existir).
       # Para usar outra pasta no Windows, defina no .env: ELISA_HOST_XLSX_DIR=D:/caminho/absoluto/ELISA
       - ${ELISA_HOST_XLSX_DIR:-./Example/results/ELISA}:/data/elisa:ro
     depends_on:

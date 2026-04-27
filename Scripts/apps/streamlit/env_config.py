@@ -68,7 +68,7 @@ def get_flowise_public_port() -> str:
 
 
 def get_elisa_xlsx_dir() -> str | None:
-    """Pasta com ficheiros `.xlsx` do ELISA (ambiente ou secrets; opcional)."""
+    """Pasta com arquivos `.xlsx` do ELISA (ambiente ou secrets; opcional)."""
     raw = get_config("ELISA_XLSX_DIR")
     if raw is None:
         return None
@@ -92,7 +92,7 @@ def explain_missing_elisa_dir(configured: str | None, resolved: Path | None) -> 
     if _running_in_docker() and _looks_like_windows_drive_path(configured):
         parts.append(
             "O valor parece um caminho do Windows (`D:\\...`), mas a aplicação corre em Linux "
-            "dentro do Docker — esse caminho não existe no contentor. "
+            "dentro do Docker — esse caminho não existe no contêiner. "
             "No `docker-compose.yml` a pasta do host é montada em `/data/elisa` e "
             "`ELISA_XLSX_DIR` deve ser `/data/elisa` (já definido no Compose). "
             "Defina `ELISA_HOST_XLSX_DIR` no `.env` com a pasta **no Windows** onde estão os `.xlsx` "
@@ -108,7 +108,7 @@ def explain_missing_elisa_dir(configured: str | None, resolved: Path | None) -> 
             parts.append(f"A pasta `{configured}` não pôde ser usada (verifique permissões de leitura).")
         parts.append(
             "Remova aspas extra no `.env` se tiver colocado o caminho entre `\"...\"`. "
-            "Use caminho absoluto. Em Docker, prefira `ELISA_HOST_XLSX_DIR` + `/data/elisa` no contentor."
+            "Use caminho absoluto. Em Docker, prefira `ELISA_HOST_XLSX_DIR` + `/data/elisa` no contêiner."
         )
     return " ".join(parts)
 

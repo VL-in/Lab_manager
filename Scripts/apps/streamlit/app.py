@@ -53,9 +53,32 @@ def _persist() -> None:
     save_store(st.session_state.conversations, st.session_state.current_id)
 
 
+def _consume_pending_chat_user(conv) -> bool:
+    """Se o usuário enviou na rodada anterior, grava a mensagem e sinaliza streaming na próxima parte do layout."""
+    raw = st.session_state.pop("_lab_pending_user", None)
+    if raw is None:
+        return False
+    if isinstance(raw, tuple) and len(raw) == 2:
+        cid, pending = raw
+        if cid != conv.id:
+            st.session_state["_lab_pending_user"] = raw
+            return False
+    else:
+        pending = raw
+    pending = str(pending).strip()
+    if not pending:
+        return False
+    conv.messages.append(Message(role="user", content=pending))
+    touch(conv)
+    infer_title_from_messages(conv)
+    _persist()
+    st.session_state["_lab_stream_assistant_cid"] = conv.id
+    return True
+
+
 def main() -> None:
     st.set_page_config(
-        page_title="Lab manager",
+        page_title="Assistente de laboratório",
         page_icon="🧪",
         layout="wide",
         initial_sidebar_state="expanded",
@@ -72,7 +95,7 @@ def main() -> None:
     conv = _current_conv()
 
     with st.sidebar:
-        st.markdown('<p class="lab-sidebar-brand">Lab manager</p>', unsafe_allow_html=True)
+        st.markdown('<p class="lab-sidebar-brand">Assistente de laboratório</p>', unsafe_allow_html=True)
         st.markdown('<p class="lab-sidebar-tag">P&D · assistente</p>', unsafe_allow_html=True)
 
         if st.button("Nova conversa", use_container_width=True, type="primary"):
@@ -130,7 +153,7 @@ def main() -> None:
         st.markdown("**Flowise**")
         st.caption(f"API: `{flowise_base}` · [local:{flowise_public}](http://localhost:{flowise_public})")
         if has_flow:
-            st.success("Flow ID configurado (Chatflow/AgentFlow).")
+            st.success("ID do fluxo configurado (Chatflow/AgentFlow).")
         else:
             st.warning(
                 "Defina o ID do Flowise (Chatflow ou AgentFlow) em variáveis de ambiente "
@@ -155,15 +178,9 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
-        prompt = st.chat_input("Escreva a sua mensagem…")
+        _consume_pending_chat_user(conv)
 
-        if prompt:
-            conv.messages.append(Message(role="user", content=prompt))
-            touch(conv)
-            infer_title_from_messages(conv)
-            _persist()
-
-        # Área com scroll no browser: mensagens + resposta em curso ficam no mesmo bloco.
+        # Área com scroll: conversa acima; o campo de texto fica abaixo (fora deste bloco).
         chat_height = 440
         with st.container(height=chat_height, border=True):
             if not conv.messages:
@@ -174,14 +191,16 @@ def main() -> None:
             for m in conv.messages:
                 with st.chat_message(m.role):
                     st.markdown(m.content)
-            if prompt:
+            if st.session_state.get("_lab_stream_assistant_cid") == conv.id:
+                del st.session_state["_lab_stream_assistant_cid"]
+                question = conv.messages[-1].content if conv.messages else ""
                 with st.chat_message("assistant"):
                     chunks: list[str] = []
 
                     def _token_stream():
                         try:
                             for delta in iter_flowise_token_deltas(
-                                prompt,
+                                question,
                                 session_id=conv.id,
                                 base_url=flowise_base,
                                 chatflow_id=flow_id,
@@ -201,6 +220,11 @@ def main() -> None:
                 infer_title_from_messages(conv)
                 _persist()
                 st.rerun()
+
+        prompt = st.chat_input("Escreva a sua mensagem…", key=f"lab_chat_input_{conv.id}")
+        if prompt and str(prompt).strip():
+            st.session_state["_lab_pending_user"] = (conv.id, str(prompt).strip())
+            st.rerun()
 
     with tab_elisa:
         render_elisa_query_tab()

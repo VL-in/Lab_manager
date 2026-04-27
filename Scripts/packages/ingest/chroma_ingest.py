@@ -1,6 +1,6 @@
-"""Ingestao textual idempotente para Chroma com embeddings OpenAI-compatible.
+"""Ingestão textual idempotente para Chroma com embeddings compatíveis com OpenAI.
 
-Uso rapido:
+Uso rápido:
   python packages/ingest/chroma_ingest.py --input-dir ./data/docs
 """
 
@@ -100,7 +100,7 @@ def _iter_text_files(input_dir: Path) -> Iterable[Path]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ingere documentos textuais no Chroma.")
-    parser.add_argument("--input-dir", required=True, help="Diretorio com .txt/.md")
+    parser.add_argument("--input-dir", required=True, help="Diretório com .txt/.md")
     parser.add_argument("--chroma-host", default=os.getenv("CHROMA_HOST", "localhost"))
     parser.add_argument("--chroma-port", type=int, default=int(os.getenv("CHROMA_PORT", "8000")))
     parser.add_argument("--collection", default=os.getenv("CHROMA_COLLECTION", "lab_docs"))
@@ -114,7 +114,7 @@ def main() -> None:
 
     input_dir = Path(args.input_dir)
     if not input_dir.exists():
-        raise SystemExit(f"Diretorio nao encontrado: {input_dir}")
+        raise SystemExit(f"Diretório não encontrado: {input_dir}")
 
     chroma_client = chromadb.HttpClient(host=args.chroma_host, port=args.chroma_port)
     collection = chroma_client.get_or_create_collection(name=args.collection)
@@ -142,7 +142,7 @@ def main() -> None:
         metadatas = [r.metadata for r in records]
         vectors = embedder.embed(docs)
 
-        # Idempotencia: mesmo chunk_id + content_hash resulta em update deterministico.
+        # Idempotência: mesmo chunk_id + content_hash resulta em update determinístico.
         collection.upsert(ids=ids, documents=docs, metadatas=metadatas, embeddings=vectors)
         total_chunks += len(records)
 

@@ -182,7 +182,7 @@ def iter_flowise_token_deltas(
                 yield delta
 
         if not yielded:
-            # Resposta vazia ou eventos não reconhecidos: uma chamada síncrona evita ecrã em branco.
+            # Resposta vazia ou eventos não reconhecidos: uma chamada síncrona evita tela em branco.
             yield predict(
                 question,
                 session_id=session_id,

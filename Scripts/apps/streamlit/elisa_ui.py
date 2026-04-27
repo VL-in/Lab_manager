@@ -67,9 +67,7 @@ def render_elisa_query_tab() -> None:
         "Pasta ativa: "
         + (f"`{resolved}`" if resolved else "— (defina `ELISA_XLSX_DIR` ou coloque os `.xlsx` em `Example/results/ELISA` ao lado de `Scripts`)")
     )
-    if configured:
-        st.caption(f"Variável / secrets: `ELISA_XLSX_DIR` = `{configured}`")
-
+   
     hint = explain_missing_elisa_dir(configured, resolved)
     if hint:
         st.warning(hint)
@@ -86,9 +84,9 @@ def render_elisa_query_tab() -> None:
         if not hint:
             if Path("/.dockerenv").is_file():
                 st.warning(
-                    "Não foi encontrada a pasta de dados ELISA. No Docker o caminho no contentor "
+                    "Não foi encontrada a pasta de dados ELISA. No Docker o caminho no contêiner "
                     "é `/data/elisa` (definido no `docker-compose.yml`). Confirme o volume que monta "
-                    "os Excel do host (por omissão `./Example/results/ELISA` ao lado do `docker-compose.yml`) "
+                    "os Excel do host (por padrão `./Example/results/ELISA` ao lado do `docker-compose.yml`) "
                     "ou defina `ELISA_HOST_XLSX_DIR` no `.env` com a pasta absoluta no Windows, "
                     "ex.: `ELISA_HOST_XLSX_DIR=D:/Laboratorio/ELISA`, e execute `docker compose up -d`."
                 )
@@ -102,16 +100,16 @@ def render_elisa_query_tab() -> None:
 
     files = list_xlsx_files(resolved)
     if not files:
-        msg = f"Nenhum ficheiro `.xlsx` em `{resolved}`."
+        msg = f"Nenhum arquivo `.xlsx` em `{resolved}`."
         if Path("/.dockerenv").is_file():
             msg += (
-                " Coloque ficheiros `.xlsx` nessa pasta no **host** (é uma montagem de leitura) "
+                " Coloque arquivos `.xlsx` nessa pasta no **host** (é uma montagem somente leitura) "
                 "ou ajuste `ELISA_HOST_XLSX_DIR` no `.env` e recrie o serviço: `docker compose up -d`."
             )
         st.info(msg)
         return
 
-    st.caption("Ficheiros: " + ", ".join(f"`{f.name}`" for f in files))
+    st.caption("Arquivos carregados: " + ", ".join(f"`{f.name}`" for f in files))
 
     _ensure_db(resolved)
     warns: list[str] = st.session_state.get("_elisa_warns") or []
@@ -194,7 +192,7 @@ def render_elisa_query_tab() -> None:
         )
         csv_bytes = out.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
-            label="Descarregar resultado (.csv)",
+            label="Baixar resultado (.csv)",
             data=csv_bytes,
             file_name="elisa_consulta.csv",
             mime="text/csv",
