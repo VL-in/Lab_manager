@@ -20,7 +20,7 @@ from env_config import (
 )
 from elisa_ui import render_elisa_query_tab
 from export_utils import conversation_to_docx_bytes
-from flowise_client import FlowiseError, predict
+from flowise_client import FlowiseError, iter_flowise_token_deltas
 from theme import inject_theme
 
 
@@ -155,11 +155,6 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
-        with st.container(border=True):
-            for m in conv.messages:
-                with st.chat_message(m.role):
-                    st.markdown(m.content)
-
         prompt = st.chat_input("Escreva a sua mensagem…")
 
         if prompt:
@@ -167,26 +162,45 @@ def main() -> None:
             touch(conv)
             infer_title_from_messages(conv)
             _persist()
-            with st.chat_message("user"):
-                st.markdown(prompt)
-            with st.chat_message("assistant"):
-                with st.spinner("A processar…"):
-                    try:
-                        reply = predict(
-                            prompt,
-                            session_id=conv.id,
-                            base_url=flowise_base,
-                            chatflow_id=flow_id,
-                            api_key=api_key,
-                        )
-                    except FlowiseError as e:
-                        reply = f"**Erro ao contatar o Flowise:**\n\n`{e}`"
-                st.markdown(reply)
-            conv.messages.append(Message(role="assistant", content=reply))
-            touch(conv)
-            infer_title_from_messages(conv)
-            _persist()
-            st.rerun()
+
+        # Área com scroll no browser: mensagens + resposta em curso ficam no mesmo bloco.
+        chat_height = 440
+        with st.container(height=chat_height, border=True):
+            if not conv.messages:
+                st.markdown(
+                    '<p class="lab-chat-empty">Envie uma pergunta sobre protocolos, resultados ou documentação do laboratório.</p>',
+                    unsafe_allow_html=True,
+                )
+            for m in conv.messages:
+                with st.chat_message(m.role):
+                    st.markdown(m.content)
+            if prompt:
+                with st.chat_message("assistant"):
+                    chunks: list[str] = []
+
+                    def _token_stream():
+                        try:
+                            for delta in iter_flowise_token_deltas(
+                                prompt,
+                                session_id=conv.id,
+                                base_url=flowise_base,
+                                chatflow_id=flow_id,
+                                api_key=api_key,
+                            ):
+                                chunks.append(delta)
+                                yield delta
+                        except FlowiseError as e:
+                            err = f"**Erro ao contatar o Flowise:**\n\n`{e}`"
+                            chunks.append(err)
+                            yield err
+
+                    st.write_stream(_token_stream)
+                    reply = "".join(chunks)
+                conv.messages.append(Message(role="assistant", content=reply))
+                touch(conv)
+                infer_title_from_messages(conv)
+                _persist()
+                st.rerun()
 
     with tab_elisa:
         render_elisa_query_tab()

@@ -23,6 +23,16 @@ def inject_theme() -> None:
             background: var(--lab-bg);
             color: var(--lab-text);
           }
+          /* Melhor leitura em ecrãs estreitos (telemóvel / janela estreita). */
+          @media (max-width: 768px) {
+            section[data-testid="stMain"] .block-container {
+              padding-left: 0.75rem;
+              padding-right: 0.75rem;
+            }
+            [data-testid="stSidebar"] {
+              box-shadow: 0 0 12px rgba(28, 36, 48, 0.12);
+            }
+          }
           [data-testid="stSidebar"] {
             background: var(--lab-sidebar-bg) !important;
             border-right: 1px solid var(--lab-border);
@@ -54,10 +64,17 @@ def inject_theme() -> None:
           [data-testid="stChatMessage"] [data-testid="stVerticalBlock"] {
             gap: 0.35rem;
           }
-          /* O thread usa scroll da página (chat_input tem de ficar por último no script). */
+          /* Área do thread de mensagens dentro do contentor com borda. */
           div[data-testid="stVerticalBlockBorderWrapper"]:has([data-testid="stChatMessage"]) {
             background: var(--lab-surface);
             border-radius: 12px;
+          }
+          .lab-chat-empty {
+            color: var(--lab-muted);
+            font-size: 0.9rem;
+            text-align: center;
+            padding: 2rem 1rem;
+            margin: 0;
           }
           .lab-hero {
             font-size: 1.25rem;
@@ -86,10 +103,25 @@ def inject_theme() -> None:
             color: var(--lab-muted);
             margin-bottom: 0.75rem;
           }
+          /*
+           * Espaço para o cabeçalho nativo do Streamlit (menu, tema, “Deploy”).
+           * padding-top demasiado baixo faz as abas e o primeiro conteúdo ficarem
+           * por baixo do header e deixam de ser clicáveis.
+           */
           section[data-testid="stMain"] .block-container {
-            padding-top: 1rem;
+            padding-top: max(5.5rem, calc(1rem + 3.75rem));
             padding-bottom: 0.5rem;
-            max-width: 920px;
+            max-width: min(1100px, 100%);
+          }
+          /* Tabelas e área de dados: cantos alinhados ao resto da UI. */
+          [data-testid="stDataFrame"] {
+            border-radius: 8px;
+          }
+          /* Input de chat visível em fundo claro ao rolar. */
+          [data-testid="stChatInput"] {
+            background: var(--lab-surface);
+            border-radius: 12px;
+            border: 1px solid var(--lab-border);
           }
         </style>
         """,

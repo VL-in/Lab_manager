@@ -6,8 +6,9 @@ Visão geral
 -----------
 Stack local com Docker Compose:
   • Flowise  — orquestração de fluxos / agentes (UI no host: veja a porta em FLOWISE_PORT)
-  • Streamlit — interface web do laboratório: chat integrado ao Flowise, histórico de
-    conversas persistente e exportação da conversa em DOCX
+  • Streamlit — interface web do laboratório: chat integrado ao Flowise (respostas em
+    streaming quando o fluxo suporta SSE), histórico persistente, exportação DOCX e
+    separador para consulta a dados ELISA em Excel via DuckDB
     (UI no host: veja a porta em STREAMLIT_PORT)
   • ChromaDB — vetor store local para RAG e embeddings textuais
     (API no host: veja a porta em CHROMA_PORT)
@@ -35,6 +36,10 @@ Progresso atual (implementado e validado)
       - chunk size: 300
       - chunk overlap: 100
       - dois loaders separados: sensibilização e otimização
+  • Streamlit: streaming de tokens (API de predição com `streaming: true` + eventos SSE
+    no formato do Flowise), tema com espaçamento para o cabeçalho nativo não cobrir as
+    abas, área de chat com scroll e separador «Dados ELISA (DuckDB)» (pré-visualização,
+    SQL, exportação CSV, gráficos rápidos opcionais).
 
 Requisitos
 ----------
@@ -125,6 +130,16 @@ Opcionais no .env (recomendadas para respostas reais do assistente no Streamlit)
                         funciona em modo demonstração (sem chamar o fluxo com ID).
   FLOWISE_API_KEY     — Chave de API do Flowise, se o servidor estiver configurado para
                         exigir autenticação (cabeçalho Authorization: Bearer ...).
+  ELISA_HOST_XLSX_DIR — (Só Docker / opcional) Caminho **no host** (Windows/Linux) da pasta
+                        com `.xlsx`. O `docker-compose.yml` monta essa pasta em `/data/elisa`
+                        no contentor Streamlit. Se não definir, usa-se por omissão
+                        `./Example/results/ELISA` (relativo à pasta do `docker-compose.yml`;
+                        o Docker cria a pasta no host se ainda não existir).
+  ELISA_XLSX_DIR      — (Execução local sem Docker) Caminho absoluto à pasta com `.xlsx`.
+                        Dentro do Docker **não** use caminhos Windows aqui: o Compose define
+                        `ELISA_XLSX_DIR=/data/elisa` no serviço; os ficheiros vêm do volume
+                        montado a partir de `ELISA_HOST_XLSX_DIR` ou da pasta por omissão.
+                        Se vazio e sem Docker, a app tenta `Example/results/ELISA` no repositório.
 
 Dentro do contêiner Streamlit (já definidas no compose; não precisa repetir no .env):
 
@@ -141,6 +156,9 @@ Dentro do contêiner Streamlit (já definidas no compose; não precisa repetir n
   LMSTUDIO_EMBEDDING_MODEL — nome do modelo de embeddings no LM Studio
   LAB_CHAT_DATA_DIR    — diretório onde é gravado o histórico de conversas (/app/data),
                          persistido pelo volume streamlit_chat_data
+  ELISA_XLSX_DIR      — fixo no contentor como `/data/elisa` (definido no compose; não passe
+                         caminhos `D:\...` do Windows). A origem dos ficheiros é o bind
+                         `${ELISA_HOST_XLSX_DIR:-./Example/results/ELISA}:/data/elisa`
 
 Execução local do Streamlit (fora do Docker), na pasta apps/streamlit:
 
@@ -148,6 +166,8 @@ Execução local do Streamlit (fora do Docker), na pasta apps/streamlit:
     (pasta ignorada pelo Git; criada automaticamente).
   • FLOWISE_BASE_URL — por exemplo http://localhost:3000 se o Flowise estiver no host.
   • FLOWISE_CHATFLOW_ID / FLOWISE_API_KEY — mesma semântica que no compose.
+  • ELISA_XLSX_DIR — caminho absoluto da pasta com `.xlsx` (ou vazio para tentativa em
+    `Example/results/ELISA`). No Docker use `ELISA_HOST_XLSX_DIR` no `.env` (ver secção de variáveis).
 
 Comportamento técnico
 ---------------------
@@ -162,9 +182,14 @@ Comportamento técnico
     volume Docker ai_lab_manager_flowise_data montado em /root/.flowise.
   • Com o ID do flow definido no ambiente (ou em secrets), o Streamlit envia cada
     mensagem ao Flowise via HTTP POST em /api/v1/prediction/<id>, com corpo JSON que
-    inclui "question" e "sessionId" (o ID da conversa no Streamlit, para memória por
-    conversa no lado do Flowise quando o fluxo o suportar). Sem ID configurado, não
-    há chamada a este endpoint: resposta de demonstração.
+    inclui "question", "sessionId" (ID da conversa no Streamlit, para memória por conversa
+    no Flowise quando o fluxo o suportar) e "streaming": true. O Flowise devolve eventos
+    SSE (`message:` + linha `data:` com JSON contendo `event` e `data`; tokens em
+    `event: "token"`). A UI usa `st.write_stream` para mostrar o texto à medida que chega.
+    Se a resposta vier como JSON único (sem SSE) ou se o fluxo não emitir tokens, o
+    cliente faz fallback para uma predição síncrona sem streaming, para evitar ecrã
+    em branco. Sem ID configurado, não há chamada real ao endpoint: resposta de
+    demonstração em fatias apenas na UI.
   • Para RAG: o Flowise consulta o Chroma (vector store) e usa embeddings servidos
     pelo LM Studio via API OpenAI-compatible.
   • Histórico de conversas do Streamlit: ficheiro JSON chat_sessions.json sob
@@ -172,10 +197,19 @@ Comportamento técnico
 
 Interface Streamlit (funcional)
 -------------------------------
+  • Abas principais: «Assistente» (chat) e «Dados ELISA (DuckDB)» (dados em Excel).
   • Barra lateral: nova conversa, lista de conversas anteriores, exportar conversa (.docx),
     estado da ligação ao Flowise, remoção da conversa atual (se existir mais do que uma).
-  • Área principal: cabeçalho discreto, painel do thread de mensagens e campo de entrada.
-  • Dependências Python adicionais: requests, python-docx (ver apps/streamlit/requirements.txt).
+  • Assistente: thread num contentor com altura fixa e scroll; resposta do modelo em
+    streaming quando o Flowise envia tokens; histórico gravado só após a resposta completa.
+  • ELISA (DuckDB): carrega `.xlsx` da pasta configurada, pré-visualização de tabelas,
+    editor SQL (DuckDB), resultado com scroll e formatação de colunas, botão de descarga
+    CSV (UTF-8 com BOM) e gráficos de barras opcionais em expanders quando existir coluna
+    numérica. Botão «Recarregar Excel» limpa a cache em memória.
+  • Tema (theme.py): cores claras P&D; `padding-top` na área principal dimensionado para
+    o cabeçalho nativo do Streamlit não sobrepor as abas; ajustes para ecrã estreito.
+  • Dependências Python: requests, python-docx, duckdb, pandas, openpyxl
+    (ver apps/streamlit/requirements.txt).
 
 Estrutura relevante do repositório
 ----------------------------------
@@ -184,11 +218,13 @@ Estrutura relevante do repositório
   apps/flowise/
     RAG_MVP_SETUP.md      — bootstrap do RAG no Flowise com Chroma + LM Studio
   apps/streamlit/         — código e Dockerfile do Streamlit
-    app.py                — aplicação principal (layout chat + exportação)
-    theme.py              — tema claro P&D (CSS injetado)
+    app.py                — aplicação principal (abas chat + ELISA, exportação)
+    theme.py              — tema claro P&D (CSS injetado; espaço para cabeçalho Streamlit)
     env_config.py         — leitura de config sensível (ambiente + st.secrets; sem literais)
     chat_sessions.py      — modelo e persistência das conversas (JSON)
-    flowise_client.py     — cliente HTTP para predição (recebe ID/chave já resolvidos)
+    flowise_client.py     — predição síncrona e streaming (SSE Flowise + fallback JSON)
+    elisa_ui.py           — separador ELISA (Streamlit + DuckDB)
+    elisa_duckdb.py       — carga de Excel em memória e execução SQL
     export_utils.py       — exportação DOCX
     Dockerfile            — copia o diretório apps/streamlit para a imagem (COPY . .)
     requirements.txt
@@ -269,6 +305,18 @@ Resolução de problemas
       Confirme FLOWISE_CHATFLOW_ID no .env (ID correto do Chatflow/AgentFlow no Flowise) e que o
       fluxo está publicado/ativo. Em caso de 401/403, configure FLOWISE_API_KEY conforme
       a instância do Flowise.
+  • Streaming sem texto visível ou resposta só no fim:
+      Confirme que o Flowise e o nó de LLM no fluxo suportam streaming. Proxies que
+      bufferizam o corpo podem atrasar os tokens; o cliente tenta fallback síncrono se
+      não receber eventos `token` no SSE.
+  • Separador ELISA sem dados ou pasta inválida:
+      Fora do Docker: `ELISA_XLSX_DIR` com caminho absoluto no sistema onde corre o Streamlit
+      (sem aspas extra no `.env`). Dentro do Docker: caminhos `D:\...` não existem no Linux
+      do contentor — use `ELISA_HOST_XLSX_DIR` com a pasta no Windows e confirme o bind
+      `...:/data/elisa` no `docker-compose.yml`; o contentor lê sempre `/data/elisa`.
+  • Abas «Assistente» / «ELISA» parcialmente tapadas pelo menu do Streamlit:
+      O tema reserva espaço no topo da área principal; se após atualizar o Streamlit o
+      problema voltar, ajuste o `padding-top` em `apps/streamlit/theme.py`.
 
   • Upsert no Flowise falha com "ChromaConnectionError":
       Verifique a URL do Chroma no Vector Store do Flowise.
@@ -299,16 +347,19 @@ AgentFlow + LM Studio (fluxo recomendado)
   • Ver estado dos serviços:
       docker compose ps
 
-  • Reconstruir só o Streamlit depois de mudar o código:
-      docker compose build --no-cache streamlit; docker compose up -d
+  • Reconstruir só o Streamlit depois de mudar o código ou variáveis embutidas na imagem:
+      docker compose build --no-cache streamlit
+      docker compose up -d streamlit
+      (O Compose repassa o `.env` do host ao contêiner em cada `up`; variáveis só no `.env`
+      não exigem rebuild, mas alterações em `apps/streamlit/*.py` exigem rebuild da imagem.)
 
 Notas para evolução (fora deste compose)
 ----------------------------------------
   • LM Studio no host (modelos locais): os contêineres acessam o host em geral
     via host.docker.internal no Windows; isso será documentado quando integrar
     modelos locais diretamente neste compose.
-  • Próximos passos típicos: painel de dados ou anexos no chat, streaming de tokens se o
-    fluxo Flowise suportar.
+  • Ideias típicas: anexos no chat, mais visualizações no separador de dados, cancelamento
+    de pedido em curso (abort do streaming).
 
 ================================================================================
   Fim do README

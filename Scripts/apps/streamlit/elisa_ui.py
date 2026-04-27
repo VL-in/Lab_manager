@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 from elisa_duckdb import list_xlsx_files, load_xlsx_into_duckdb, run_sql
-from env_config import get_elisa_xlsx_dir, resolve_elisa_dir_path
+from env_config import explain_missing_elisa_dir, get_elisa_xlsx_dir, resolve_elisa_dir_path
 
 
 def _fingerprint(directory: Path) -> tuple[tuple[str, int], ...]:
@@ -31,6 +32,28 @@ def _clear_elisa_cache() -> None:
         st.session_state.pop(k, None)
 
 
+def _column_config_for_df(df: pd.DataFrame) -> dict:
+    """Configuração de colunas para leitura em browser (números, datas, texto)."""
+    cfg: dict = {}
+    for col in df.columns:
+        s = df[col]
+        if pd.api.types.is_numeric_dtype(s):
+            cfg[col] = st.column_config.NumberColumn(col, format="%.4g", width="small")
+        elif pd.api.types.is_datetime64_any_dtype(s):
+            cfg[col] = st.column_config.DatetimeColumn(col, width="medium")
+        else:
+            cfg[col] = st.column_config.TextColumn(col, width="medium")
+    return cfg
+
+
+def _first_numeric_series(df: pd.DataFrame) -> tuple[str, pd.Series] | None:
+    for col in df.columns:
+        s = df[col]
+        if pd.api.types.is_numeric_dtype(s) and s.notna().any():
+            return col, s
+    return None
+
+
 def render_elisa_query_tab() -> None:
     st.markdown(
         '<p class="lab-sub">Consulta interativa aos resultados em Excel (DuckDB em memória).</p>',
@@ -47,23 +70,45 @@ def render_elisa_query_tab() -> None:
     if configured:
         st.caption(f"Variável / secrets: `ELISA_XLSX_DIR` = `{configured}`")
 
+    hint = explain_missing_elisa_dir(configured, resolved)
+    if hint:
+        st.warning(hint)
+
     c1, c2 = st.columns([1, 4])
     with c1:
         if st.button("Recarregar Excel", use_container_width=True):
             _clear_elisa_cache()
+            st.session_state.pop("_elisa_query_ok", None)
+            st.session_state.pop("_elisa_query_err", None)
             st.rerun()
 
     if resolved is None:
-        st.warning(
-            "Não foi encontrada uma pasta válida. Defina a variável de ambiente ou "
-            "`ELISA_XLSX_DIR` em `.streamlit/secrets.toml` com o caminho absoluto da pasta "
-            "que contém os `.xlsx` (por exemplo o caminho no Windows que indicou)."
-        )
+        if not hint:
+            if Path("/.dockerenv").is_file():
+                st.warning(
+                    "Não foi encontrada a pasta de dados ELISA. No Docker o caminho no contentor "
+                    "é `/data/elisa` (definido no `docker-compose.yml`). Confirme o volume que monta "
+                    "os Excel do host (por omissão `./Example/results/ELISA` ao lado do `docker-compose.yml`) "
+                    "ou defina `ELISA_HOST_XLSX_DIR` no `.env` com a pasta absoluta no Windows, "
+                    "ex.: `ELISA_HOST_XLSX_DIR=D:/Laboratorio/ELISA`, e execute `docker compose up -d`."
+                )
+            else:
+                st.warning(
+                    "Não foi encontrada uma pasta válida. Defina `ELISA_XLSX_DIR` no ambiente ou em "
+                    "`.streamlit/secrets.toml` com o caminho absoluto da pasta que contém os `.xlsx` "
+                    "(caminho Linux/macOS ou Windows, conforme onde corre o Streamlit)."
+                )
         return
 
     files = list_xlsx_files(resolved)
     if not files:
-        st.info(f"Nenhum ficheiro `.xlsx` em `{resolved}`.")
+        msg = f"Nenhum ficheiro `.xlsx` em `{resolved}`."
+        if Path("/.dockerenv").is_file():
+            msg += (
+                " Coloque ficheiros `.xlsx` nessa pasta no **host** (é uma montagem de leitura) "
+                "ou ajuste `ELISA_HOST_XLSX_DIR` no `.env` e recrie o serviço: `docker compose up -d`."
+            )
+        st.info(msg)
         return
 
     st.caption("Ficheiros: " + ", ".join(f"`{f.name}`" for f in files))
@@ -82,9 +127,25 @@ def render_elisa_query_tab() -> None:
 
     default_tbl = tables[0]
     pick = st.selectbox("Tabela (pré-visualização)", options=tables, index=0)
+    preview_height = 320
     try:
         preview = run_sql(con, f'SELECT * FROM "{pick}" LIMIT 200')
-        st.dataframe(preview, use_container_width=True, hide_index=True)
+        st.caption(f"Pré-visualização: até 200 linhas · {len(preview.columns)} colunas")
+        st.dataframe(
+            preview,
+            use_container_width=True,
+            hide_index=True,
+            height=preview_height,
+            column_config=_column_config_for_df(preview),
+        )
+        num = _first_numeric_series(preview)
+        if num is not None and len(preview) > 1:
+            col_name, series = num
+            with st.expander("Gráfico rápido (primeira coluna numérica)", expanded=False):
+                chart_df = preview[[col_name]].copy()
+                chart_df.index = preview.index
+                st.caption(f"Coluna: `{col_name}` (índice = ordem das linhas na pré-visualização)")
+                st.bar_chart(chart_df, height=260, use_container_width=True)
     except Exception as e:  # noqa: BLE001
         st.error(f"Erro na pré-visualização: {e}")
 
@@ -100,16 +161,50 @@ def render_elisa_query_tab() -> None:
     )
     st.session_state["_elisa_sql_draft"] = sql
 
-    if st.button("Executar SQL", type="primary"):
+    run = st.button("Executar SQL", type="primary")
+    if run:
+        st.session_state.pop("_elisa_query_ok", None)
+        st.session_state.pop("_elisa_query_err", None)
         if not sql.strip():
-            st.warning("Escreva uma consulta SQL.")
+            st.session_state["_elisa_query_err"] = "Escreva uma consulta SQL."
         else:
             try:
                 out = run_sql(con, sql)
-                st.success(f"{len(out)} linhas × {len(out.columns)} colunas")
-                st.dataframe(out, use_container_width=True, hide_index=True)
+                st.session_state["_elisa_query_ok"] = {"df": out, "sql": sql.strip()}
             except Exception as e:  # noqa: BLE001
-                st.error(f"Erro SQL: {e}")
+                st.session_state["_elisa_query_err"] = str(e)
+
+    err = st.session_state.get("_elisa_query_err")
+    ok = st.session_state.get("_elisa_query_ok")
+    if err:
+        if str(err).startswith("Escreva"):
+            st.warning(err)
+        else:
+            st.error(f"Erro SQL: {err}")
+    if ok:
+        out: pd.DataFrame = ok["df"]
+        st.success(f"{len(out)} linhas × {len(out.columns)} colunas")
+        result_height = min(520, max(220, 14 * min(len(out), 36) + 40))
+        st.dataframe(
+            out,
+            use_container_width=True,
+            hide_index=True,
+            height=result_height,
+            column_config=_column_config_for_df(out),
+        )
+        csv_bytes = out.to_csv(index=False).encode("utf-8-sig")
+        st.download_button(
+            label="Descarregar resultado (.csv)",
+            data=csv_bytes,
+            file_name="elisa_consulta.csv",
+            mime="text/csv",
+            use_container_width=False,
+        )
+        num = _first_numeric_series(out)
+        if num is not None and len(out) > 1:
+            cname, _ = num
+            with st.expander("Gráfico do resultado (coluna numérica)", expanded=False):
+                st.bar_chart(out[[cname]], height=280, use_container_width=True)
 
     with st.expander("Ajuda rápida"):
         st.markdown(
