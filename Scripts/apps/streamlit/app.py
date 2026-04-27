@@ -18,6 +18,7 @@ from env_config import (
     get_flowise_chatflow_id,
     get_flowise_public_port,
 )
+from elisa_ui import render_elisa_query_tab
 from export_utils import conversation_to_docx_bytes
 from flowise_client import FlowiseError, predict
 from theme import inject_theme
@@ -145,44 +146,50 @@ def main() -> None:
                 _persist()
                 st.rerun()
 
-    st.markdown('<p class="lab-hero">Assistente do laboratório</p>', unsafe_allow_html=True)
-    st.markdown(
-        '<p class="lab-sub">Diálogo com o fluxo configurado no Flowise. O histórico fica guardado entre sessões.</p>',
-        unsafe_allow_html=True,
-    )
+    tab_chat, tab_elisa = st.tabs(["Assistente", "Dados ELISA (DuckDB)"])
 
-    with st.container(border=True):
-        for m in conv.messages:
-            with st.chat_message(m.role):
-                st.markdown(m.content)
+    with tab_chat:
+        st.markdown('<p class="lab-hero">Assistente do laboratório</p>', unsafe_allow_html=True)
+        st.markdown(
+            '<p class="lab-sub">Diálogo com o fluxo configurado no Flowise. O histórico fica guardado entre sessões.</p>',
+            unsafe_allow_html=True,
+        )
 
-    prompt = st.chat_input("Escreva a sua mensagem…")
+        with st.container(border=True):
+            for m in conv.messages:
+                with st.chat_message(m.role):
+                    st.markdown(m.content)
 
-    if prompt:
-        conv.messages.append(Message(role="user", content=prompt))
-        touch(conv)
-        infer_title_from_messages(conv)
-        _persist()
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        with st.chat_message("assistant"):
-            with st.spinner("A processar…"):
-                try:
-                    reply = predict(
-                        prompt,
-                        session_id=conv.id,
-                        base_url=flowise_base,
-                        chatflow_id=flow_id,
-                        api_key=api_key,
-                    )
-                except FlowiseError as e:
-                    reply = f"**Erro ao contatar o Flowise:**\n\n`{e}`"
-            st.markdown(reply)
-        conv.messages.append(Message(role="assistant", content=reply))
-        touch(conv)
-        infer_title_from_messages(conv)
-        _persist()
-        st.rerun()
+        prompt = st.chat_input("Escreva a sua mensagem…")
+
+        if prompt:
+            conv.messages.append(Message(role="user", content=prompt))
+            touch(conv)
+            infer_title_from_messages(conv)
+            _persist()
+            with st.chat_message("user"):
+                st.markdown(prompt)
+            with st.chat_message("assistant"):
+                with st.spinner("A processar…"):
+                    try:
+                        reply = predict(
+                            prompt,
+                            session_id=conv.id,
+                            base_url=flowise_base,
+                            chatflow_id=flow_id,
+                            api_key=api_key,
+                        )
+                    except FlowiseError as e:
+                        reply = f"**Erro ao contatar o Flowise:**\n\n`{e}`"
+                st.markdown(reply)
+            conv.messages.append(Message(role="assistant", content=reply))
+            touch(conv)
+            infer_title_from_messages(conv)
+            _persist()
+            st.rerun()
+
+    with tab_elisa:
+        render_elisa_query_tab()
 
 
 if __name__ == "__main__":

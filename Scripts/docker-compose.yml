@@ -78,6 +78,8 @@ services:
       LMSTUDIO_EMBEDDING_MODEL: ${LMSTUDIO_EMBEDDING_MODEL:-text-embedding-nomic-embed-text-v1.5}
       # Persistência do histórico de conversas entre reinícios do contêiner
       LAB_CHAT_DATA_DIR: /app/data
+      # Pasta com .xlsx ELISA no contêiner (monte um volume e aponte o caminho, ex.: /data/elisa)
+      ELISA_XLSX_DIR: ${ELISA_XLSX_DIR:-}
     volumes:
       - streamlit_chat_data:/app/data
     depends_on:

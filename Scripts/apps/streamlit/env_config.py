@@ -11,6 +11,9 @@ para esses valores. O restante da aplicação recebe strings já resolvidas.
 from __future__ import annotations
 
 import os
+from pathlib import Path
+
+from elisa_duckdb import resolve_elisa_dir
 
 
 def _from_env(name: str) -> str | None:
@@ -55,3 +58,13 @@ def get_flowise_base_url() -> str:
 def get_flowise_public_port() -> str:
     """Porta publicada no host (apenas para links na interface)."""
     return get_config("FLOWISE_PUBLIC_PORT") or "3000"
+
+
+def get_elisa_xlsx_dir() -> str | None:
+    """Pasta com ficheiros `.xlsx` do ELISA (ambiente ou secrets; opcional)."""
+    return get_config("ELISA_XLSX_DIR")
+
+
+def resolve_elisa_dir_path() -> Path | None:
+    """Caminho absoluto da pasta ELISA, ou None se não existir."""
+    return resolve_elisa_dir(get_elisa_xlsx_dir())
